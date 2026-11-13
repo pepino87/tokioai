@@ -225,6 +225,10 @@
 const $ = (id) => document.getElementById(id);
 let lastState = null;
 let userScrolled = false;
+let chatSig = "";        // firma de los mensajes ya renderizados (evita re-render = evita parpadeo)
+let liveEls = null;      // refs al mensaje "en vivo" (streaming)
+let liveNotesSig = "";   // firma de las notas del mensaje en vivo
+let agentsSig = "";      // firma de la lista de agentes ya renderizada
 
 // ── Utilidades ──
 function esc(s) {
@@ -240,82 +244,119 @@ function fmtTime(ts) {
 function renderChat(chat) {
   const box = $("messages");
   const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 120;
-  box.innerHTML = "";
 
-  for (const e of chat.entries || []) {
-    const m = document.createElement("div");
-    m.className = "msg " + e.kind;
-    const meta = document.createElement("div");
-    meta.className = "meta";
-    if (e.kind === "user") meta.innerHTML = `<b>Vos</b> · ${fmtTime(e.ts)}`;
-    else if (e.kind === "assistant") meta.innerHTML = `<b>Tokio</b> · ${fmtTime(e.ts)}`;
-    else meta.innerHTML = `⚠ ${fmtTime(e.ts)}`;
-    const bubble = document.createElement("div");
-    bubble.className = "bubble";
-    bubble.textContent = e.text || "";
-    m.append(meta, bubble);
-    if (e.notes && e.notes.length) {
-      const notes = document.createElement("div");
-      notes.className = "notes";
-      for (const n of e.notes) {
-        const nd = document.createElement("div");
-        nd.className = "note";
-        nd.textContent = n;
-        notes.appendChild(nd);
+  // Re-render SOLO si cambió algo de los mensajes (sin parpadeo constante)
+  const sig = (chat.entries || []).map(e => e.kind + ":" + (e.text || "").length + ":" + ((e.notes && e.notes.length) || 0)).join("|");
+  if (sig !== chatSig) {
+    chatSig = sig;
+    liveEls = null;
+    liveNotesSig = "";
+    box.innerHTML = "";
+
+    for (const e of chat.entries || []) {
+      const m = document.createElement("div");
+      m.className = "msg " + e.kind;
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      if (e.kind === "user") meta.innerHTML = `<b>Vos</b> · ${fmtTime(e.ts)}`;
+      else if (e.kind === "assistant") meta.innerHTML = `<b>Tokio</b> · ${fmtTime(e.ts)}`;
+      else meta.innerHTML = `⚠ ${fmtTime(e.ts)}`;
+      const bubble = document.createElement("div");
+      bubble.className = "bubble";
+      bubble.textContent = e.text || "";
+      m.append(meta, bubble);
+      if (e.notes && e.notes.length) {
+        const notes = document.createElement("div");
+        notes.className = "notes";
+        for (const n of e.notes) {
+          const nd = document.createElement("div");
+          nd.className = "note";
+          nd.textContent = n;
+          notes.appendChild(nd);
+        }
+        m.appendChild(notes);
       }
-      m.appendChild(notes);
+      box.appendChild(m);
     }
-    box.appendChild(m);
+    if (nearBottom || !userScrolled) box.scrollTop = box.scrollHeight;
   }
 
-  // Mensaje en vivo (streaming)
+  // Mensaje en vivo (streaming): se actualiza en su lugar, sin reconstruir la lista
+  const live = chat.live || {};
   if (chat.status === "thinking") {
-    const m = document.createElement("div");
-    m.className = "msg assistant";
-    const meta = document.createElement("div");
-    meta.className = "meta";
-    meta.innerHTML = "<b>Tokio</b> · escribiendo…";
-    const bubble = document.createElement("div");
-    bubble.className = "bubble";
-    bubble.textContent = (chat.live && chat.live.text) || "";
-    const cur = document.createElement("span");
-    cur.className = "cursor";
-    bubble.appendChild(cur);
-    m.append(meta, bubble);
-    if (chat.live && chat.live.notes && chat.live.notes.length) {
+    if (!liveEls) {
+      liveEls = {};
+      const m = document.createElement("div");
+      m.className = "msg assistant";
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      meta.innerHTML = "<b>Tokio</b> · escribiendo…";
+      const bubble = document.createElement("div");
+      bubble.className = "bubble";
+      const txt = document.createElement("span");
+      const cur = document.createElement("span");
+      cur.className = "cursor";
+      bubble.append(txt, cur);
       const notes = document.createElement("div");
       notes.className = "notes";
-      for (const n of chat.live.notes) {
+      m.append(meta, bubble, notes);
+      box.appendChild(m);
+      liveEls = { m, txt, notes };
+    }
+    if (liveEls.txt.textContent !== (live.text || "")) {
+      liveEls.txt.textContent = live.text || "";
+    }
+    const notesArr = live.notes || [];
+    const nsig = notesArr.join("\u0001");
+    if (nsig !== liveNotesSig) {
+      liveNotesSig = nsig;
+      liveEls.notes.innerHTML = "";
+      for (const n of notesArr) {
         const nd = document.createElement("div");
         nd.className = "note";
         nd.textContent = n;
-        notes.appendChild(nd);
+        liveEls.notes.appendChild(nd);
       }
-      m.appendChild(notes);
     }
-    box.appendChild(m);
+    if (nearBottom || !userScrolled) box.scrollTop = box.scrollHeight;
+  } else if (liveEls) {
+    liveEls.m.remove();
+    liveEls = null;
+    liveNotesSig = "";
   }
 
   $("thinking-tag").classList.toggle("show", chat.status === "thinking");
   $("chat-input").disabled = chat.status === "thinking";
   $("btn-send").disabled = chat.status === "thinking";
   if (chat.model) $("model-chip").textContent = "modelo: " + chat.model;
-  if (nearBottom || !userScrolled) box.scrollTop = box.scrollHeight;
 }
 
 // ── Render agentes ──
 const STATUS_ES = { queued: "En cola", running: "Trabajando", done: "Listo", error: "Error", stopped: "Detenido" };
 const openDetails = new Set();  // detalles abiertos que sobreviven al re-render (key: id:kind)
+const detailScroll = new Map(); // posición de scroll de cada panel abierto
 const detailKey = (id, kind) => id + ":" + kind;
 
-function bindDetail(det, key) {
+function bindDetail(det, key, box) {
   det.open = openDetails.has(key);
   det.addEventListener("toggle", () => {
     if (det.open) openDetails.add(key); else openDetails.delete(key);
   });
+  if (box) {
+    box.addEventListener("scroll", () => detailScroll.set(key, box.scrollTop), { passive: true });
+    if (openDetails.has(key)) {
+      const pos = detailScroll.get(key) || 0;
+      requestAnimationFrame(() => { box.scrollTop = pos; });
+    }
+  }
 }
 
 function renderAgents(agents) {
+  // Re-render SOLO si cambió algo de los agentes (sin parpadeo de tarjetas)
+  const sig = agents.map(a => a.id + ":" + a.status + ":" + (a.log ? a.log.length : 0) + ":" + (a.result || "").length + ":" + (a.error || "").length).join("|");
+  if (sig === agentsSig) return;
+  agentsSig = sig;
+
   const list = $("agents-list");
   list.innerHTML = "";
   if (!agents.length) {
@@ -354,7 +395,7 @@ function renderAgents(agents) {
       rb.className = "resultbox";
       rb.textContent = a.result;
       det.appendChild(rb);
-      bindDetail(det, detailKey(a.id, "result"));
+      bindDetail(det, detailKey(a.id, "result"), rb);
       card.appendChild(det);
     }
 
@@ -370,7 +411,7 @@ function renderAgents(agents) {
         lb.appendChild(div);
       }
       det.appendChild(lb);
-      bindDetail(det, detailKey(a.id, "log"));
+      bindDetail(det, detailKey(a.id, "log"), lb);
       card.appendChild(det);
     }
 
@@ -400,6 +441,7 @@ function renderAgents(agents) {
     valid.add(detailKey(a.id, "log"));
   }
   for (const k of [...openDetails]) if (!valid.has(k)) openDetails.delete(k);
+  for (const k of [...detailScroll.keys()]) if (!valid.has(k)) detailScroll.delete(k);
 }
 
 // ── Polling ──
