@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DomiAI ◆ MatiAI — Panel</title>
+<style>
+  :root {
+    --bg: #0b0f14;
+    --panel: #11161d;
+    --panel2: #161c25;
+    --border: #242c38;
+    --text: #d7dde6;
+    --muted: #7d8794;
+    --red: #f0454f;
+    --red-soft: rgba(240, 69, 79, .13);
+    --blue: #4f9cff;
+    --blue-soft: rgba(79, 156, 255, .13);
+    --violet: #b06bff;
+    --green: #3fb96f;
+    --yellow: #d9a53f;
+    --radius: 12px;
+    --mono: "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px;
+  }
+
+  /* ── Header ── */
+  header {
+    display: flex; align-items: center; gap: 14px;
+    padding: 10px 18px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 10;
+  }
+  header .brand { font-size: 17px; font-weight: 800; letter-spacing: .3px; white-space: nowrap; }
+  .brand .d { color: var(--blue); } .brand .m { color: var(--red); }
+  .brand .sep { color: var(--violet); }
+  .brand small { color: var(--muted); font-weight: 500; font-size: 12px; margin-left: 8px; }
+  header .spacer { flex: 1; }
+  .chip {
+    font-size: 11.5px; padding: 4px 10px; border-radius: 999px;
+    background: var(--panel2); border: 1px solid var(--border); color: var(--muted);
+    white-space: nowrap;
+  }
+  .chip.model { color: var(--violet); border-color: #3a2b52; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+  .dot.on { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  button {
+    font: inherit; cursor: pointer; color: var(--text);
+    background: var(--panel2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 7px 12px; transition: border-color .15s;
+  }
+  button:hover { border-color: #3a4657; }
+  button.primary { background: linear-gradient(135deg, #c22d39, #e0454f); border: none; font-weight: 700; color: #fff; }
+  button.primary:hover { filter: brightness(1.1); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+
+  /* ── Layout ── */
+  main {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 430px;
+    height: calc(100vh - 51px);
+  }
+  @media (max-width: 900px) {
+    main { grid-template-columns: 1fr; height: auto; }
+    #agents { border-left: none; border-top: 1px solid var(--border); }
+  }
+
+  /* ── Chat ── */
+  #chat-col { display: flex; flex-direction: column; min-width: 0; }
+  #messages { flex: 1; overflow-y: auto; padding: 18px 20px 10px; }
+  .msg { max-width: 78%; margin-bottom: 14px; animation: pop .18s ease; }
+  @keyframes pop { from { opacity: 0; transform: translateY(4px); } }
+  .msg .meta { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .msg .bubble {
+    padding: 10px 13px; border-radius: var(--radius); line-height: 1.5;
+    white-space: pre-wrap; word-wrap: break-word;
+  }
+  .msg.user { margin-left: auto; text-align: right; }
+  .msg.user .bubble { background: var(--blue-soft); border: 1px solid #1d3a5f; border-top-right-radius: 3px; }
+  .msg.assistant .bubble { background: var(--panel2); border: 1px solid var(--border); border-top-left-radius: 3px; }
+  .msg.assistant .bubble::before { content: ""; }
+  .msg.assistant .meta b { color: var(--red); }
+  .msg.user .meta b { color: var(--blue); }
+  .msg.error .bubble { background: rgba(217, 165, 63, .1); border-color: #6b551f; color: #e8c984; }
+  .notes { margin-top: 6px; }
+  .note {
+    font-family: var(--mono); font-size: 11px; color: var(--muted);
+    background: #0d1219; border: 1px solid #1c232e; border-radius: 6px;
+    padding: 3px 8px; margin-top: 3px; white-space: pre-wrap; word-wrap: break-word;
+  }
+  .cursor { display: inline-block; width: 8px; height: 15px; background: var(--red); vertical-align: -2px; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  #thinking-tag { display: none; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); margin: 0 20px 8px; }
+  #thinking-tag.show { display: flex; }
+  .spinner { width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: var(--red); border-radius: 50%; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #input-row { display: flex; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--border); background: var(--panel); }
+  #input-row textarea {
+    flex: 1; resize: none; font: inherit; color: var(--text);
+    background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 12px; max-height: 140px; outline: none;
+  }
+  #input-row textarea:focus { border-color: #3a4657; }
+
+  /* ── Agentes ── */
+  #agents {
+    border-left: 1px solid var(--border); background: var(--panel);
+    display: flex; flex-direction: column; overflow-y: auto; padding: 16px;
+  }
+  #agents h2 { margin: 0 0 4px; font-size: 15px; }
+  #agents h2 .dot-title { color: var(--blue); }
+  #agents .sub { color: var(--muted); font-size: 12px; margin-bottom: 14px; }
+  details.form { margin-bottom: 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel2); }
+  details.form summary { padding: 10px 14px; cursor: pointer; font-weight: 700; font-size: 13.5px; color: var(--blue); }
+  details.form .body { padding: 0 14px 14px; display: flex; flex-direction: column; gap: 9px; }
+  label { font-size: 11.5px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+  input[type=text], select, textarea {
+    font: inherit; color: var(--text); background: var(--bg);
+    border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; outline: none; width: 100%;
+  }
+  input[type=text]:focus, select:focus, textarea:focus { border-color: #3a4657; }
+  textarea { resize: vertical; }
+  textarea.persona { min-height: 46px; }
+  textarea.task { min-height: 64px; }
+
+  .agent-card {
+    border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--panel2); padding: 12px 14px; margin-bottom: 12px;
+  }
+  .agent-card .row1 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .agent-card .name { font-weight: 800; }
+  .pill { font-size: 10.5px; font-weight: 700; padding: 2px 9px; border-radius: 999px; text-transform: uppercase; letter-spacing: .4px; }
+  .pill.queued { background: rgba(217, 165, 63, .15); color: var(--yellow); }
+  .pill.running { background: var(--blue-soft); color: var(--blue); animation: pulse 1.6s ease infinite; }
+  @keyframes pulse { 50% { opacity: .55; } }
+  .pill.done { background: rgba(63, 185, 111, .15); color: var(--green); }
+  .pill.error { background: var(--red-soft); color: var(--red); }
+  .pill.stopped { background: #1c222b; color: var(--muted); }
+  .agent-card .mtag { font-family: var(--mono); font-size: 10.5px; color: var(--violet); }
+  .agent-card .task { color: var(--muted); font-size: 12.5px; margin: 8px 0; white-space: pre-wrap; word-wrap: break-word; }
+  .agent-card details { margin-top: 6px; }
+  .agent-card summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+  .agent-card summary:hover { color: var(--text); }
+  .agent-card .logbox, .agent-card .resultbox {
+    font-family: var(--mono); font-size: 11px; background: #0d1219;
+    border: 1px solid #1c232e; border-radius: 8px; padding: 8px 10px;
+    max-height: 170px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; margin-top: 6px;
+  }
+  .logbox .l-tool { color: var(--blue); }
+  .logbox .l-error { color: var(--red); }
+  .logbox .l-notice { color: var(--muted); }
+  .agent-card .actions { display: flex; gap: 6px; margin-top: 10px; }
+  .agent-card .actions button { font-size: 12px; padding: 5px 10px; }
+  button.stop { color: var(--yellow); }
+  button.del { color: var(--red); }
+  #agents-empty { color: var(--muted); font-size: 12.5px; text-align: center; padding: 22px 0; }
+  ::-webkit-scrollbar { width: 9px; height: 9px; }
+  ::-webkit-scrollbar-thumb { background: #26303d; border-radius: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand"><span class="d">DomiAI</span> <span class="sep">◆</span> <span class="m">MatiAI</span><small>Panel · chat + agentes en paralelo</small></div>
+  <div class="spacer"></div>
+  <span class="chip"><span class="dot on" id="srv-dot"></span>servidor local</span>
+  <span class="chip model" id="model-chip">modelo: …</span>
+  <button id="btn-clear" title="Reiniciar conversación">⟲ Reiniciar chat</button>
+</header>
+
+<main>
+  <!-- Chat -->
+  <section id="chat-col">
+    <div id="messages"></div>
+    <div id="thinking-tag"><div class="spinner"></div>Tokio está pensando…</div>
+    <div id="input-row">
+      <textarea id="chat-input" rows="1" placeholder="Escribile a Tokio… (Enter envía, Shift+Enter salto de línea)"></textarea>
+      <button class="primary" id="btn-send">Enviar ▸</button>
+    </div>
+  </section>
+
+  <!-- Agentes -->
+  <section id="agents">
+    <h2><span class="dot-title">◆</span> Agentes paralelos</h2>
+    <div class="sub">Cada agente tiene su persona, modelo y tarea — trabajan al mismo tiempo.</div>
+
+    <details class="form" id="agent-form" open>
+      <summary>＋ Nuevo agente</summary>
+      <div class="body">
+        <label>Nombre
+          <input type="text" id="ag-name" placeholder="Ej: Recon de dominio">
+        </label>
+        <label>Modelo (opcional — default = el del CLI)
+          <select id="ag-model"></select>
+        </label>
+        <label>Programa (reglas que aplican)
+          <select id="ag-program"></select>
+        </label>
+        <label>Persona / rol (opcional)
+          <textarea class="persona" id="ag-persona" placeholder="Ej: Sos un analista OSINT experto. Respondé corto y técnico."></textarea>
+        </label>
+        <label>Tarea
+          <textarea class="task" id="ag-task" placeholder="Ej: Investigá el dominio X y enumerá subdominios y servicios."></textarea>
+        </label>
+        <button class="primary" id="btn-launch">▶ Lanzar agente</button>
+      </div>
+    </details>
+
+    <div id="agents-list"></div>
+  </section>
+</main>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+let lastState = null;
+let userScrolled = false;
+
+// ── Utilidades ──
+function esc(s) {
+  const d = document.createElement("div");
+  d.textContent = s == null ? "" : String(s);
+  return d.innerHTML;
+}
+function fmtTime(ts) {
+  return new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+// ── Render chat ──
+function renderChat(chat) {
+  const box = $("messages");
+  const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 120;
+  box.innerHTML = "";
+
+  for (const e of chat.entries || []) {
+    const m = document.createElement("div");
+    m.className = "msg " + e.kind;
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    if (e.kind === "user") meta.innerHTML = `<b>Vos</b> · ${fmtTime(e.ts)}`;
+    else if (e.kind === "assistant") meta.innerHTML = `<b>Tokio</b> · ${fmtTime(e.ts)}`;
+    else meta.innerHTML = `⚠ ${fmtTime(e.ts)}`;
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+    bubble.textContent = e.text || "";
+    m.append(meta, bubble);
+    if (e.notes && e.notes.length) {
+      const notes = document.createElement("div");
+      notes.className = "notes";
+      for (const n of e.notes) {
+        const nd = document.createElement("div");
+        nd.className = "note";
+        nd.textContent = n;
+        notes.appendChild(nd);
+      }
+      m.appendChild(notes);
+    }
+    box.appendChild(m);
+  }
+
+  // Mensaje en vivo (streaming)
+  if (chat.status === "thinking") {
+    const m = document.createElement("div");
+    m.className = "msg assistant";
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.innerHTML = "<b>Tokio</b> · escribiendo…";
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+    bubble.textContent = (chat.live && chat.live.text) || "";
+    const cur = document.createElement("span");
+    cur.className = "cursor";
+    bubble.appendChild(cur);
+    m.append(meta, bubble);
+    if (chat.live && chat.live.notes && chat.live.notes.length) {
+      const notes = document.createElement("div");
+      notes.className = "notes";
+      for (const n of chat.live.notes) {
+        const nd = document.createElement("div");
+        nd.className = "note";
+        nd.textContent = n;
+        notes.appendChild(nd);
+      }
+      m.appendChild(notes);
+    }
+    box.appendChild(m);
+  }
+
+  $("thinking-tag").classList.toggle("show", chat.status === "thinking");
+  $("chat-input").disabled = chat.status === "thinking";
+  $("btn-send").disabled = chat.status === "thinking";
+  if (chat.model) $("model-chip").textContent = "modelo: " + chat.model;
+  if (nearBottom || !userScrolled) box.scrollTop = box.scrollHeight;
+}
+
+// ── Render agentes ──
+const STATUS_ES = { queued: "En cola", running: "Trabajando", done: "Listo", error: "Error", stopped: "Detenido" };
+const openDetails = new Set();  // detalles abiertos que sobreviven al re-render (key: id:kind)
+const detailKey = (id, kind) => id + ":" + kind;
+
+function bindDetail(det, key) {
+  det.open = openDetails.has(key);
+  det.addEventListener("toggle", () => {
+    if (det.open) openDetails.add(key); else openDetails.delete(key);
+  });
+}
+
+function renderAgents(agents) {
+  const list = $("agents-list");
+  list.innerHTML = "";
+  if (!agents.length) {
+    list.innerHTML = '<div id="agents-empty">Todavía no hay agentes.<br>Creá el primero con el formulario de arriba ☝️</div>';
+    return;
+  }
+  for (const a of agents) {
+    const card = document.createElement("div");
+    card.className = "agent-card";
+    card.dataset.id = a.id;
+
+    const row1 = document.createElement("div");
+    row1.className = "row1";
+    row1.innerHTML = `<span class="name">${esc(a.name)}</span>
+      <span class="pill ${esc(a.status)}">${STATUS_ES[a.status] || esc(a.status)}</span>
+      <span class="mtag">${esc(a.model)}</span>${a.program && a.program !== "auto" ? `<span class="mtag">prog: ${esc(a.program)}</span>` : ""}`;
+    card.appendChild(row1);
+
+    const task = document.createElement("div");
+    task.className = "task";
+    task.textContent = a.task;
+    card.appendChild(task);
+
+    if (a.error) {
+      const err = document.createElement("div");
+      err.className = "logbox";
+      err.style.color = "var(--red)";
+      err.textContent = "✖ " + a.error;
+      card.appendChild(err);
+    }
+
+    if (a.result) {
+      const det = document.createElement("details");
+      det.innerHTML = "<summary>Resultado</summary>";
+      const rb = document.createElement("div");
+      rb.className = "resultbox";
+      rb.textContent = a.result;
+      det.appendChild(rb);
+      bindDetail(det, detailKey(a.id, "result"));
+      card.appendChild(det);
+    }
+
+    if (a.log && a.log.length) {
+      const det = document.createElement("details");
+      det.innerHTML = "<summary>Actividad (" + a.log.length + ")</summary>";
+      const lb = document.createElement("div");
+      lb.className = "logbox";
+      for (const l of a.log) {
+        const div = document.createElement("div");
+        div.className = "l-" + l.kind;
+        div.textContent = fmtTime(l.t) + "  " + l.text;
+        lb.appendChild(div);
+      }
+      det.appendChild(lb);
+      bindDetail(det, detailKey(a.id, "log"));
+      card.appendChild(det);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    if (a.status === "running" || a.status === "queued") {
+      const stopBtn = document.createElement("button");
+      stopBtn.className = "stop";
+      stopBtn.textContent = "⏹ Detener";
+      stopBtn.onclick = () => fetch("/api/agents/" + a.id + "/stop", { method: "POST" }).then(poll);
+      actions.appendChild(stopBtn);
+    }
+    const delBtn = document.createElement("button");
+    delBtn.className = "del";
+    delBtn.textContent = "✕ Quitar";
+    delBtn.onclick = () => fetch("/api/agents/" + a.id, { method: "DELETE" }).then(poll);
+    actions.appendChild(delBtn);
+    card.appendChild(actions);
+
+    list.appendChild(card);
+  }
+
+  // Purgar claves de detalles de agentes que ya no existen
+  const valid = new Set();
+  for (const a of agents) {
+    valid.add(detailKey(a.id, "result"));
+    valid.add(detailKey(a.id, "log"));
+  }
+  for (const k of [...openDetails]) if (!valid.has(k)) openDetails.delete(k);
+}
+
+// ── Polling ──
+async function poll() {
+  try {
+    const r = await fetch("/api/state");
+    if (!r.ok) return;
+    const st = await r.json();
+    lastState = st;
+    renderChat(st.chat);
+    renderAgents(st.agents);
+    if (!window.__aliasesLoaded) {
+      fillModelSelect(st.aliases);
+      fillProgramSelect(st.programs);
+      window.__aliasesLoaded = true;
+    }
+  } catch (e) { /* servidor ocupado, reintenta */ }
+}
+
+function fillModelSelect(aliases) {
+  const sel = $("ag-model");
+  const def = document.createElement("option");
+  def.value = "default";
+  def.textContent = "default (mismo que el CLI)";
+  sel.appendChild(def);
+  for (const [group, items] of Object.entries(aliases || {})) {
+    if (!items || !items.length) continue;
+    const og = document.createElement("optgroup");
+    og.label = group;
+    for (const [alias, model] of items.slice(0, 12)) {
+      const o = document.createElement("option");
+      o.value = alias;
+      o.textContent = alias + " → " + model;
+      og.appendChild(o);
+    }
+    sel.appendChild(og);
+  }
+}
+
+// ── Acciones ──
+async function sendChat() {
+  const input = $("chat-input");
+  const msg = input.value.trim();
+  if (!msg || input.disabled) return;
+  input.value = "";
+  input.style.height = "auto";
+  userScrolled = false;
+  try {
+    await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: msg }),
+    });
+  } catch (e) {}
+  poll();
+}
+
+function fillProgramSelect(programs) {
+  const sel = $("ag-program");
+  const def = document.createElement("option");
+  def.value = "auto";
+  def.textContent = "auto (detectar por dominio de la tarea)";
+  sel.appendChild(def);
+  for (const p of programs || []) {
+    const o = document.createElement("option");
+    o.value = p.name;
+    o.textContent = p.name + " — " + (p.domains || []).slice(0, 3).join(", ");
+    sel.appendChild(o);
+  }
+}
+
+async function launchAgent() {
+  const name = $("ag-name").value.trim();
+  const model = $("ag-model").value;
+  const persona = $("ag-persona").value.trim();
+  const task = $("ag-task").value.trim();
+  const program = $("ag-program").value || "auto";
+  if (!task) { alert("Poné una tarea para el agente."); return; }
+  const btn = $("btn-launch");
+  btn.disabled = true;
+  try {
+    const r = await fetch("/api/agents", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, model, persona, task, program }),
+    });
+    if (!r.ok) {
+      const d = await r.json();
+      alert(d.error || "No se pudo crear el agente");
+      btn.disabled = false;
+      return;
+    }
+    $("ag-name").value = ""; $("ag-persona").value = ""; $("ag-task").value = "";
+    btn.disabled = false;
+    poll();
+  } catch (e) { btn.disabled = false; }
+}
+
+// ── Eventos ──
+$("btn-send").onclick = sendChat;
+$("chat-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); }
+});
+$("chat-input").addEventListener("input", () => {
+  const t = $("chat-input");
+  t.style.height = "auto";
+  t.style.height = Math.min(t.scrollHeight, 140) + "px";
+});
+$("btn-launch").onclick = launchAgent;
+$("btn-clear").onclick = async () => {
+  await fetch("/api/chat/clear", { method: "POST" }).catch(() => {});
+  poll();
+};
+$("messages").addEventListener("scroll", () => {
+  const box = $("messages");
+  userScrolled = box.scrollHeight - box.scrollTop - box.clientHeight > 120;
+});
+
+poll();
+setInterval(poll, 800);
+</script>
+</body>
+</html>

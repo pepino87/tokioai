@@ -30,6 +30,7 @@ all = [
 [project.scripts]
 tokioai = "tokioai_cli.interactive:main"
 tokio = "tokioai_cli.interactive:main"
+tokio-panel = "tokioai_cli.web_panel:main"
 
 [tool.setuptools.packages.find]
 include = ["tokioai_cli*"]

@@ -61,6 +61,7 @@ KEY_PREFIX_RULES: dict[str, list[str]] = {
     "gemini": ["AIza"],
     "tokioai": ["sk-", "tkai-"],  # TokioAI keys: sk- (backend compat) or tkai- (router keys)
     "kimi": ["sk-"],  # Moonshot direct keys also use sk- prefix
+    "deepseek": ["sk-"],  # DeepSeek keys use sk- prefix
     "openrouter": ["sk-or-v1-"],
 }
 

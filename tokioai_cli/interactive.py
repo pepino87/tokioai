@@ -373,7 +373,7 @@ _CLI_COMMANDS = [
     "unlimited", "persistent", "stop", "config", "dual", "router", "threshold", "force",
     "/status", "/waf", "/health", "/drone", "/threats", "/entity",
     "/sitrep", "/see", "/containers", "/wifi", "/coffee", "/logs", "/ha", "/picar",
-    "/gcp", "/diff", "/commit", "/branch",
+    "/gcp", "/diff", "/commit", "/branch", "/panel",
     "memory", "tasks",
 ]
 
@@ -1358,6 +1358,28 @@ def _slash_branch():
     _safe_print()
 
 
+def _slash_panel():
+    """Start/stop the web panel (chat + parallel agents) and open the browser."""
+    import webbrowser
+    try:
+        from tokioai_cli import web_panel
+        if web_panel.PANEL_SERVER is not None and web_panel.PANEL_SERVER._running:
+            _safe_print(f"\n  {C_BRIGHT_YELLOW}⏹ Deteniendo panel web…{C_RESET}")
+            web_panel.stop_panel()
+            _safe_print(f"  {C_GREEN}✔ Panel detenido.{C_RESET}\n")
+            return
+        url = web_panel.start_panel()
+        _safe_print(f"\n  {C_BRIGHT_GREEN}▶ Panel web iniciado{C_RESET}")
+        _safe_print(f"  {C_BRIGHT_CYAN}  → {url}{C_RESET}")
+        _safe_print(f"  {C_GRAY}  Chat con Tokio + agentes en paralelo. Escribí /panel de nuevo para detenerlo.{C_RESET}\n")
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
+    except Exception as e:
+        _safe_print(f"  {C_BRIGHT_RED}✖ Error iniciando panel: {e}{C_RESET}\n")
+
+
 _SLASH_COMMANDS = {
     "/status": _slash_status,
     "/waf": _slash_waf,
@@ -1379,6 +1401,7 @@ _SLASH_COMMANDS = {
     "/branch": _slash_branch,
     "/memstats": _slash_memstats,
     "/recall": _slash_recall,
+    "/panel": _slash_panel,
 }
 
 
@@ -1387,21 +1410,33 @@ _SLASH_COMMANDS = {
 # ═══════════════════════════════════════════════════════
 
 def show_banner(model: str, provider: str, mode_parts: list[str] | None = None):
-    g = [196, 202, 208, 214, 220, 226]
+    # Paleta personalizada: DOMI azul (TEA) y MATI rojo (TDAH)
+    reds = [196, 202, 160, 124, 88, 52]
+    blues = [39, 38, 33, 27, 21, 20]
 
-    banner_lines = [
-        "████████╗ ██████╗ ██╗  ██╗██╗ ██████╗ ",
-        "╚══██╔══╝██╔═══██╗██║ ██╔╝██║██╔═══██╗",
-        "   ██║   ██║   ██║█████╔╝ ██║██║   ██║",
-        "   ██║   ██║   ██║██╔═██╗ ██║██║   ██║",
-        "   ██║   ╚██████╔╝██║  ██╗██║╚██████╔╝",
-        "   ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚═╝ ╚═════╝",
+    domi_lines = [
+        "██████╗  ██████╗ ███╗   ███╗██╗",
+        "██╔══██╗ ██╔═══██╗████╗ ████║██║",
+        "██║  ██║ ██║   ██║██╔████╔██║██║",
+        "██║  ██║ ██║   ██║██║╚██╔╝██║██║",
+        "██████╔╝ ╚██████╔╝██║ ╚═╝ ██║██║",
+        "╚═════╝  ╚═════╝ ╚═╝     ╚═╝╚═╝",
+    ]
+    mati_lines = [
+        "███╗   ███╗ █████╗ ████████╗██╗",
+        "████╗ ████║██╔══██╗╚══██╔══╝██║",
+        "██╔████╔██║███████║   ██║   ██║",
+        "██║╚██╔╝██║██╔══██║   ██║   ██║",
+        "██║ ╚═╝ ██║██║  ██║   ██║   ██║",
+        "╚═╝     ╚═╝╚═╝  ╚═╝   ╚═╝   ╚═╝",
     ]
 
     _safe_print()
-    for i, line in enumerate(banner_lines):
-        color = c256(g[i % len(g)])
-        _safe_print(f"    {color}{line}{C_RESET}")
+    for i, line in enumerate(domi_lines):
+        _safe_print(f"    {c256(blues[i])}{line}{C_RESET}")
+    _safe_print()
+    for i, line in enumerate(mati_lines):
+        _safe_print(f"    {c256(reds[i])}{line}{C_RESET}")
 
     mode_str = " + ".join(mode_parts) if mode_parts else "Interactive"
 
@@ -1419,7 +1454,8 @@ def show_banner(model: str, provider: str, mode_parts: list[str] | None = None):
         "ollama": "Ollama",
     }.get(provider, provider)
 
-    _safe_print(f"    {C_BOLD}{C_BRIGHT_WHITE}  TokioAI{C_RESET} {C_GRAY}v5.2{C_RESET}")
+    _safe_print(f"    {C_BOLD}{C_BRIGHT_BLUE}  DomiAI{C_RESET}{C_BOLD}{C_BRIGHT_MAGENTA} ◆ {C_RESET}{C_BOLD}{C_BRIGHT_RED}MatiAI{C_RESET} {C_GRAY}v5.2{C_RESET}")
+    _safe_print(f"    {C_GRAY}  {C_BRIGHT_BLUE}█ TEA{C_RESET}{C_GRAY}  •  {C_BRIGHT_RED}█ TDAH{C_RESET}")
     if model.startswith("dual:"):
         from tokioai_cli.ops import resolve_tokioai_model as _resolve_tkai_dual
         parts = model[5:].split("+")
@@ -1484,7 +1520,7 @@ def show_help():
 
     _safe_print(f"""
 {C_BOLD}{C_BRIGHT_CYAN}{_LINE_THIN * w}{C_RESET}
-{C_BOLD} TokioAI v5.2 — Help{C_RESET}
+{C_BOLD} {C_BRIGHT_BLUE}DomiAI{C_RESET}{C_BOLD}{C_BRIGHT_MAGENTA} ◆ {C_RESET}{C_BOLD}{C_BRIGHT_RED}MatiAI{C_RESET}{C_BOLD} v5.2 — Help{C_RESET}
 {C_BOLD}{C_BRIGHT_CYAN}{_LINE_THIN * w}{C_RESET}
 
 {C_BOLD}Commands:{C_RESET}
@@ -1535,6 +1571,10 @@ def show_help():
   {C_BRIGHT_GREEN}/diff{C_RESET}             Git diff summary
   {C_BRIGHT_GREEN}/commit{C_RESET}           Quick stage + commit
   {C_BRIGHT_GREEN}/branch{C_RESET}           Current branch + recent commits
+
+{C_BOLD}Panel Web:{C_RESET}
+  {C_BRIGHT_GREEN}/panel{C_RESET}            Abre el panel web (chat con Tokio + agentes en paralelo)
+                                             → /panel de nuevo lo detiene
 
 {C_BOLD}Arguments:{C_RESET}
   {C_BRIGHT_CYAN}--persistent{C_RESET}, {C_BRIGHT_CYAN}-p{C_RESET}  Keep working until you say 'stop'
@@ -2856,7 +2896,7 @@ def main():
     parser.add_argument("--model", "-m", default=None,
                         help="Model (opus, sonnet, flash3, gpt4o, llama, etc.)")
     parser.add_argument("--provider", default=None,
-                        help="Provider (anthropic-vertex, anthropic, openai, gemini, openrouter, ollama)")
+                        help="Provider (anthropic-vertex, anthropic, openai, gemini, kimi, deepseek, tokioai, openrouter, ollama)")
     parser.add_argument("--verbose", "-v", action="store_true", help="Debug logging")
     parser.add_argument("--max-rounds", type=int, default=25,
                         help="Max tool rounds (0=unlimited, default: 25)")

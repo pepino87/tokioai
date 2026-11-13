@@ -112,6 +112,12 @@ MODEL_ALIASES = {
     "or-gemini31": "google/gemini-3.1-pro-preview",
     "or-llama": "meta-llama/llama-3.1-405b-instruct",
     "or-deepseek": "deepseek/deepseek-r1",
+    # ── DeepSeek (direct API — OpenAI-compatible) ──
+    "ds": "deepseek-chat",
+    "ds-chat": "deepseek-chat",
+    "deepseek-chat": "deepseek-chat",
+    "ds-r1": "deepseek-reasoner",
+    "deepseek-reasoner": "deepseek-reasoner",
     # ── TokioAI (own routing — maps to best backend per tier) ──
     "tkai": "tokioai-max",
     "tkai-max": "tokioai-max",
@@ -139,7 +145,7 @@ def list_aliases() -> dict[str, list[str]]:
     """Group aliases by provider for display."""
     groups = {
         "TokioAI": [], "Claude": [], "OpenAI": [], "Gemini": [],
-        "Kimi": [], "Ollama": [], "OpenRouter": [],
+        "Kimi": [], "DeepSeek": [], "Ollama": [], "OpenRouter": [],
     }
     seen = set()
     for alias, model in MODEL_ALIASES.items():
@@ -160,6 +166,8 @@ def list_aliases() -> dict[str, list[str]]:
             groups["Ollama"].append((alias, model))
         elif "/" in model:
             groups["OpenRouter"].append((alias, model))
+        elif "deepseek" in model:
+            groups["DeepSeek"].append((alias, model))
     return groups
 
 
@@ -292,6 +300,60 @@ for _soul_path in [
 MEMORY_DIR = os.path.expanduser("~/.tokioai")
 MEMORY_FILE = os.path.join(MEMORY_DIR, "memory.md")
 TASKS_FILE = os.path.join(MEMORY_DIR, "tasks.json")
+
+# ── Programas multi-cliente: reglas por programa (no se heredan entre dominios) ──
+PROGRAMS_FILE = os.path.expanduser("~/.tokioai/programs.json")
+
+def _load_programs() -> list:
+    """Carga los programas registrados: [{name, domains, rules}]."""
+    try:
+        if os.path.isfile(PROGRAMS_FILE):
+            with open(PROGRAMS_FILE, "r") as f:
+                data = json.loads(f.read())
+            return [
+                p for p in data.get("programs", [])
+                if isinstance(p, dict) and p.get("name")
+            ]
+    except Exception:
+        pass
+    return []
+
+def detect_program(text: str) -> Optional[str]:
+    """Devuelve el nombre del programa cuyo dominio aparezca en el texto.
+    Gana el match de dominio más largo (ej. autoriza.forum.cl > forum.cl)."""
+    t = (text or "").lower()
+    best, best_len = None, 0
+    for p in _load_programs():
+        for d in p.get("domains", []):
+            d = str(d).lower().strip()
+            if d and d in t and len(d) > best_len:
+                best, best_len = p["name"], len(d)
+    return best
+
+def _build_program_context(active: Optional[str]) -> str:
+    """Bloque de contexto de programa: reglas del programa activo + aviso de no-herencia.
+    Si el target no coincide con ningún programa, instruye a preguntar antes de operar."""
+    programs = _load_programs()
+    if not programs:
+        return ""
+    lines = ["\n\n## Programas registrados (reglas por programa)"]
+    active_prog = None
+    for p in programs:
+        doms = ", ".join(str(d) for d in p.get("domains", [])[:6])
+        mark = " ← PROGRAMA ACTIVO" if (active and str(p["name"]).lower() == str(active).lower()) else ""
+        lines.append(f"- {p['name']}: {doms}{mark}")
+        if active and str(p["name"]).lower() == str(active).lower():
+            active_prog = p
+    if active_prog:
+        lines.append(f"\n### Reglas del programa activo: {active_prog['name']} (aplican AHORA)")
+        rules = str(active_prog.get("rules", "")).strip()
+        if rules:
+            lines.append(rules)
+        lines.append("\nIMPORTANTE: estas reglas aplican SOLO a este programa. Las reglas de otros programas NO se heredan a otros dominios.")
+    else:
+        lines.append("\nIMPORTANTE: si la tarea menciona un dominio, aplicá SOLO las reglas del programa que lo contenga.")
+        lines.append("Si el dominio NO coincide con ningún programa registrado: NO realices operaciones activas contra él; preguntá al usuario si está autorizado y pedile que registre el programa en ~/.tokioai/programs.json.")
+    return "\n".join(lines)
 
 def _load_memory() -> str:
     if os.path.isfile(MEMORY_FILE):
@@ -1034,6 +1096,27 @@ def init_client(provider: str, *, allow_key_from_env: bool = True, required_key_
             print("\033[31mERROR: openai not installed. Run: pip install openai\033[0m")
             sys.exit(1)
 
+    elif provider == "deepseek":
+        api_key = _require_key_from_env("DEEPSEEK_API_KEY")
+        ok, err = _sec.validate_key_for_provider("deepseek", api_key)
+        if not ok:
+            _sec.audit_security_event("init_client", "deepseek", "DEEPSEEK_API_KEY", success=False, detail=err)
+            print(f"\033[31mERROR: {err}\033[0m")
+            print("Get your key at: https://platform.deepseek.com/api_keys")
+            sys.exit(1)
+        _final_key_check(api_key, "deepseek", "DEEPSEEK_API_KEY")
+        _sec.audit_security_event("init_client", "deepseek", "DEEPSEEK_API_KEY", success=True)
+        try:
+            from openai import OpenAI
+            client = OpenAI(
+                base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"),
+                api_key=api_key,
+            )
+            return client, "openai"  # DeepSeek uses OpenAI-compatible API
+        except ImportError:
+            print("\033[31mERROR: openai not installed. Run: pip install openai\033[0m")
+            sys.exit(1)
+
     elif provider in ("anthropic-vertex", "claude-vertex", "vertex"):
         project = VERTEX_PROJECT
         region = VERTEX_REGION
@@ -1218,7 +1301,7 @@ def init_client(provider: str, *, allow_key_from_env: bool = True, required_key_
 
     else:
         print(f"\033[31mERROR: Unknown provider '{provider}'\033[0m")
-        print("Available: anthropic-vertex, anthropic, openai, gemini, kimi, openrouter, ollama")
+        print("Available: anthropic-vertex, anthropic, openai, gemini, kimi, deepseek, tokioai, openrouter, ollama")
         sys.exit(1)
 
 
@@ -1283,6 +1366,11 @@ class TokioOps:
     COMPACT_MODEL = "claude-sonnet-4-20250514"
 
     def __init__(self, provider: str = None, model: str = None):
+        # Persona personalizada (agentes del panel web): se antepone al system prompt base
+        self.custom_persona = ""
+        # Programa activo (reglas por programa): None = autodetectar por dominio en cada turno
+        self.current_program = None
+        self._active_program = None
         self._provider_name = provider or PROVIDER
         # If provider was explicitly passed but model wasn't, use correct default for that provider
         if provider and not model:
@@ -1487,6 +1575,16 @@ class TokioOps:
         If a compaction snapshot exists, append it so the LLM always sees
         critical context even after old messages are summarized."""
         raw = _build_system_prompt()
+        # Persona personalizada (agentes del panel web): anteponer al prompt base
+        _persona = getattr(self, "custom_persona", "")
+        if _persona:
+            raw = _persona.strip() + "\n\n" + raw
+        # Contexto de programa (reglas por programa — no se heredan entre dominios)
+        _pblock = _build_program_context(
+            getattr(self, "_active_program", None) or getattr(self, "current_program", None)
+        )
+        if _pblock:
+            raw += _pblock
         # Inject compaction snapshot -- critical for memory continuity
         if getattr(self, '_compaction_snapshot', '') and self._compaction_count > 0:
             raw += "\n\n" + self._compaction_snapshot
@@ -2241,6 +2339,12 @@ class TokioOps:
                       If provided and stream=True, tokens are emitted incrementally.
             stream: Enable streaming mode (token-by-token output).
         """
+        # ── Programa activo: autodetección por dominio (o fijo si lo define el panel) ──
+        if self.current_program:
+            self._active_program = self.current_program
+        else:
+            self._active_program = detect_program(user_input)
+
         # ── Dual-Model Router: pick the right model for this request ──
         saved_client = None
         saved_client_type = None
